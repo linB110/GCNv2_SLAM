@@ -44,7 +44,6 @@ def draw_and_save_matches(img1, kp1, img2, kp2, matches, out_path, top_k=MAX_KEY
 def compute_matching_accuracy(matches, kp1, kp2, H, threshold=3):
     correct = 0
     total = len(matches)
-
     for m in matches:
         pt1 = np.array([*kp1[m.queryIdx].pt, 1.0])
         projected = H @ pt1
@@ -53,7 +52,6 @@ def compute_matching_accuracy(matches, kp1, kp2, H, threshold=3):
         error = np.linalg.norm(projected[:2] - pt2)
         if error < threshold:
             correct += 1
-
     return correct / total if total > 0 else 0
 
 def compute_mean_accuracy(values):
@@ -68,21 +66,43 @@ def plot_histogram(illum_results, view_results, save_path):
     view_min = min(view_results) if view_results else 0
     view_mean = compute_mean_accuracy(view_results)
 
-    labels = ['Illum Max', 'Illum Min', 'Illum Mean', 'View Max', 'View Min', 'View Mean']
-    values = [illum_max, illum_min, illum_mean, view_max, view_min, view_mean]
+    labels = ['Max', 'Min', 'Mean']
+    illum_values = [illum_max, illum_min, illum_mean]
+    view_values = [view_max, view_min, view_mean]
 
-    plt.figure(figsize=(10, 6))
-    plt.bar(labels, values)
-    plt.ylim(0, 1)
-    plt.ylabel('Matching Accuracy')
-    plt.title('HPatches Matching Accuracy Statistics (GCNv2)')
-    plt.grid(axis='y')
+    x = np.arange(len(labels))
+    width = 0.35
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    bars1 = ax.bar(x - width/2, illum_values, width, label='Illumination', color='orange')
+    bars2 = ax.bar(x + width/2, view_values, width, label='Viewpoint', color='blue')
+
+    ax.set_ylabel('Matching Accuracy')
+    ax.set_title('HPatches Matching Accuracy Statistics (GCNv2)')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylim(0, 1)
+    ax.legend()
+    ax.grid(axis='y')
+
+    def annotate_bars(bars):
+        for bar in bars:
+            height = bar.get_height()
+            ax.annotate(f'{height:.1%}',  # e.g. 28.9%
+                        xy=(bar.get_x() + bar.get_width() / 2, height),
+                        xytext=(0, 5),
+                        textcoords="offset points",
+                        ha='center', va='bottom')
+    
+    annotate_bars(bars1)
+    annotate_bars(bars2)
+
+    plt.tight_layout()
     plt.savefig(save_path)
     plt.close()
 
 # -------- main --------
 if __name__ == '__main__':
-    #device = torch.device('cpu')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model = torch.jit.load('/home/lab605/lab605/GCNv2_SLAM/GCN2/gcn2_320x240.pt', map_location=device)
@@ -137,19 +157,17 @@ if __name__ == '__main__':
         draw_and_save_matches(img1, kp1, img2, kp2, matches,
                               os.path.join(output_root, f"{name}_matches.png"))
 
-    # Store results
     with open(os.path.join(output_root, "matching_results.txt"), 'w') as f:
         for name, acc in results:
             f.write(f"{name}: {acc:.4f}\n")
 
-    # Print averages
     illum_avg = compute_mean_accuracy(illumination_results)
     view_avg = compute_mean_accuracy(viewpoint_results)
     print("\n📊 Average Matching Accuracy:")
     print(f"Illumination: {illum_avg:.4f}")
     print(f"Viewpoint:    {view_avg:.4f}")
 
-    # Plot histogram
-    plot_histogram(illumination_results, viewpoint_results, os.path.join(output_root, 'matching_accuracy_histogram.png'))
+    plot_histogram(illumination_results, viewpoint_results,
+                   os.path.join(output_root, 'matching_accuracy_histogram.png'))
 
-    print("✅ task finished！") 
+    print("✅ task finished！")
