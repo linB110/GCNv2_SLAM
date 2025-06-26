@@ -1,0 +1,23 @@
+GCN_SLAM
+
+       max	6.106826
+      mean	2.121509
+    median	1.372642
+       min	0.074063
+      rmse	2.750048
+       sse	4605.724701
+       std	1.749848
+
+
+ORB_SLAM2 
+       max	0.186011
+      mean	0.061565
+    median	0.058746
+       min	0.019716
+      rmse	0.065314
+       sse	2.201213
+       std	0.021810
+
+
+
+Both lost track more than fully peform SLAM
