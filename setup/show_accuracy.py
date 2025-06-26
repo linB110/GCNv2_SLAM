@@ -2,17 +2,20 @@ import os
 import cv2
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 from glob import glob
 
-# -------- 工具函式區 --------
+MAX_KEYPOINT = 1000
+
+# -------- functions --------
 def load_and_preprocess(img_path):
-    img_uint8 = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)  # uint8 原始圖
+    img_uint8 = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE) 
     img_resized = cv2.resize(img_uint8, (320, 240))
     img = img_resized.astype(np.float32) / 255.0
     tensor = torch.from_numpy(img).unsqueeze(0).unsqueeze(0).to(device)
-    return img_resized, tensor  # ✅ 傳回 uint8 圖像 & 模型輸入
+    return img_resized, tensor  
 
-def extract_features(model, img_tensor, max_keypoints=1000):
+def extract_features(model, img_tensor, max_keypoints=MAX_KEYPOINT):
     with torch.no_grad():
         keypoints_tensor, desc = model(img_tensor)
 
@@ -28,13 +31,12 @@ def extract_features(model, img_tensor, max_keypoints=1000):
         keypoints = [cv2.KeyPoint(pt[0], pt[1], 1) for pt in pts]
         return keypoints, desc, None
 
-
 def match_descriptors(desc1, desc2):
     matcher = cv2.BFMatcher(cv2.NORM_L2)
     matches = matcher.match(desc1.astype(np.float32), desc2.astype(np.float32))
     return sorted(matches, key=lambda x: x.distance)
 
-def draw_and_save_matches(img1, kp1, img2, kp2, matches, out_path, top_k=50):
+def draw_and_save_matches(img1, kp1, img2, kp2, matches, out_path, top_k=MAX_KEYPOINT):
     match_img = cv2.drawMatches(img1, kp1, img2, kp2, matches[:top_k], None,
                                 flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
     cv2.imwrite(out_path, match_img)
@@ -42,6 +44,7 @@ def draw_and_save_matches(img1, kp1, img2, kp2, matches, out_path, top_k=50):
 def compute_matching_accuracy(matches, kp1, kp2, H, threshold=3):
     correct = 0
     total = len(matches)
+
     for m in matches:
         pt1 = np.array([*kp1[m.queryIdx].pt, 1.0])
         projected = H @ pt1
@@ -50,14 +53,40 @@ def compute_matching_accuracy(matches, kp1, kp2, H, threshold=3):
         error = np.linalg.norm(projected[:2] - pt2)
         if error < threshold:
             correct += 1
+
     return correct / total if total > 0 else 0
 
-# -------- 主流程 --------
-if __name__ == '__main__':
-    device = torch.device('cpu')  # ❗ 初期建議先用 CPU，避免 CUDA assert crash
+def compute_mean_accuracy(values):
+    return sum(values) / len(values) if values else 0
 
-    # 載入 TorchScript 模型
+def plot_histogram(illum_results, view_results, save_path):
+    illum_max = max(illum_results) if illum_results else 0
+    illum_min = min(illum_results) if illum_results else 0
+    illum_mean = compute_mean_accuracy(illum_results)
+
+    view_max = max(view_results) if view_results else 0
+    view_min = min(view_results) if view_results else 0
+    view_mean = compute_mean_accuracy(view_results)
+
+    labels = ['Illum Max', 'Illum Min', 'Illum Mean', 'View Max', 'View Min', 'View Mean']
+    values = [illum_max, illum_min, illum_mean, view_max, view_min, view_mean]
+
+    plt.figure(figsize=(10, 6))
+    plt.bar(labels, values)
+    plt.ylim(0, 1)
+    plt.ylabel('Matching Accuracy')
+    plt.title('HPatches Matching Accuracy Statistics (GCNv2)')
+    plt.grid(axis='y')
+    plt.savefig(save_path)
+    plt.close()
+
+# -------- main --------
+if __name__ == '__main__':
+    #device = torch.device('cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     model = torch.jit.load('/home/lab605/lab605/GCNv2_SLAM/GCN2/gcn2_320x240.pt', map_location=device)
+    model.to(device)
     model.eval()
 
     hpatches_root = '/home/lab605/lab605/dataset/HPatches'
@@ -65,7 +94,10 @@ if __name__ == '__main__':
     os.makedirs(output_root, exist_ok=True)
 
     results = []
-    seqs = sorted(glob(os.path.join(hpatches_root, 'i_*')))
+    illumination_results = []
+    viewpoint_results = []
+
+    seqs = sorted(glob(os.path.join(hpatches_root, '*')))
     for seq in seqs:
         name = os.path.basename(seq)
         img1_path = os.path.join(seq, '1.ppm')
@@ -73,7 +105,7 @@ if __name__ == '__main__':
         H_path = os.path.join(seq, 'H_1_6')
 
         if not all(os.path.exists(p) for p in [img1_path, img2_path, H_path]):
-            print(f"❌ 缺少檔案於 {name}, 略過")
+            print(f"❌ lack of {name} file, omitting")
             continue
 
         img1, tensor1 = load_and_preprocess(img1_path)
@@ -83,16 +115,21 @@ if __name__ == '__main__':
             kp1, desc1, _ = extract_features(model, tensor1)
             kp2, desc2, _ = extract_features(model, tensor2)
         except Exception as e:
-            print(f"❌ 特徵提取失敗於 {name}: {e}")
+            print(f"❌ extract feature failed {name}: {e}")
             continue
 
         if len(kp1) == 0 or len(kp2) == 0:
-            print(f"⚠️ 無法偵測特徵點於 {name}, 跳過")
+            print(f"⚠️ can't detect keypoint {name}, skipping")
             continue
 
         matches = match_descriptors(desc1, desc2)
         H = np.loadtxt(H_path)
         acc = compute_matching_accuracy(matches, kp1, kp2, H)
+
+        if name.startswith('i'):
+            illumination_results.append(acc)
+        elif name.startswith('v'):
+            viewpoint_results.append(acc)
 
         print(f"{name}: Matching Accuracy = {acc:.4f}")
         results.append((name, acc))
@@ -100,10 +137,19 @@ if __name__ == '__main__':
         draw_and_save_matches(img1, kp1, img2, kp2, matches,
                               os.path.join(output_root, f"{name}_matches.png"))
 
-    # 儲存結果
+    # Store results
     with open(os.path.join(output_root, "matching_results.txt"), 'w') as f:
         for name, acc in results:
             f.write(f"{name}: {acc:.4f}\n")
 
-    print("✅ 完成所有匹配與輸出！")
+    # Print averages
+    illum_avg = compute_mean_accuracy(illumination_results)
+    view_avg = compute_mean_accuracy(viewpoint_results)
+    print("\n📊 Average Matching Accuracy:")
+    print(f"Illumination: {illum_avg:.4f}")
+    print(f"Viewpoint:    {view_avg:.4f}")
 
+    # Plot histogram
+    plot_histogram(illumination_results, viewpoint_results, os.path.join(output_root, 'matching_accuracy_histogram.png'))
+
+    print("✅ task finished！") 
