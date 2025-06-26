@@ -34,7 +34,7 @@
    ```
 
 ---
-
+(see setup for following codes)
 ## Test GCN Feature Extractor
 
 ### Setup Python Environment
