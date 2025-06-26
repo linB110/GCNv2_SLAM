@@ -1,0 +1,19 @@
+GCN_SLAM
+
+   max	0.179360
+      mean	0.100830
+    median	0.095816
+       min	0.025658
+      rmse	0.109983
+       sse	0.532233
+       std	0.043926
+
+ORB_SLAM2
+       max	0.023467
+      mean	0.010596
+    median	0.010024
+       min	0.000629
+      rmse	0.012081
+       sse	0.006130
+       std	0.005803
+
