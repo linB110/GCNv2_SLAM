@@ -10,8 +10,7 @@ use_cuda = torch.cuda.is_available()
 device = torch.device('cuda:0' if use_cuda else 'cpu')
 
 methods = ['orb', 'gcnv2']
-names = ['ORB', 'GCNv2']
-
+names = ['orb', 'gcnv2']
 colors = ['orange', 'green']
 linestyles = ['-', '--']
 
@@ -24,11 +23,7 @@ lim = [1, 15]
 rng = np.arange(lim[0], lim[1] + 1)
 
 def mnn_matcher(descriptors_a, descriptors_b):
-
-    descriptors_a = descriptors_a.float()
-    descriptors_b = descriptors_b.float()
     sim = descriptors_a @ descriptors_b.t()
-
     nn12 = torch.max(sim, dim=1)[1]
     nn21 = torch.max(sim, dim=0)[1]
     ids1 = torch.arange(0, sim.shape[0], device=descriptors_a.device)
@@ -103,9 +98,6 @@ def generate_read_function(method, extension='ppm', type='float'):
         kp_path = os.path.join(dataset_path, seq_name, subdir, "keypoints.npy")
         desc_path = os.path.join(dataset_path, seq_name, subdir, "descriptors.npy")
         keypoints = np.load(kp_path)
-        if keypoints.shape[1] == 2:
-            keypoints = keypoints[:, [1, 0]]
-
         descriptors = np.load(desc_path)
         if type == 'binary':
             descriptors = np.unpackbits(descriptors, axis=1, bitorder='little') * 2.0 - 1.0
