@@ -19,14 +19,31 @@ def load_and_preprocess(img_path):
 def extract_features(model, img_tensor, max_keypoints=MAX_KEYPOINT):
     with torch.no_grad():
         keypoints_tensor, desc = model(img_tensor)
+
         if keypoints_tensor.shape[0] == 0:
             return [], [], None
-        keypoints_tensor = keypoints_tensor[:max_keypoints]
-        desc = desc[:max_keypoints]
+
+        if keypoints_tensor.shape[1] == 3:
+            scores = keypoints_tensor[:, 2]
+            idx = torch.argsort(scores, descending=True)[:max_keypoints]
+            keypoints_tensor = keypoints_tensor[idx]
+            desc = desc[idx]
+        else:
+
+            keypoints_tensor = keypoints_tensor[:max_keypoints]
+            desc = desc[:max_keypoints]
+
         pts = keypoints_tensor[:, :2].cpu().numpy()
-        desc = desc.cpu().numpy()
+        desc = desc.cpu().numpy().astype(np.float32) 
+        desc /= np.linalg.norm(desc, axis=1, keepdims=True) + 1e-8
+
         keypoints = [cv2.KeyPoint(pt[0], pt[1], 1) for pt in pts]
+       
+        if desc.shape[0] == 0:
+            return [], [], None
+        
         return keypoints, desc, pts
+
 
 def match_descriptors(desc1, desc2):
     matcher = cv2.BFMatcher(cv2.NORM_L2)
@@ -176,4 +193,3 @@ if __name__ == '__main__':
                    os.path.join(output_root, 'matching_accuracy_histogram.png'))
 
     print("✅ GCNv2 evaluation finished!")
-
