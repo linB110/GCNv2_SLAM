@@ -14,9 +14,11 @@ def load_and_resize(img_path):
     return resized, original_size
 
 def match_descriptors(desc1, desc2):
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    matches = bf.match(desc1, desc2)
-    return sorted(matches, key=lambda x: x.distance)
+    bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+    matches = bf.knnMatch(desc1, desc2, k=2)
+    good_matches = [m for m, n in matches if m.distance < 0.75 * n.distance]
+    return sorted(good_matches, key=lambda x: x.distance)
+
 
 def compute_matching_accuracy(matches, kp1, kp2, H, threshold=3):
     correct = 0
@@ -88,15 +90,12 @@ if __name__ == '__main__':
 
             sx = original_size[0] / 320
             sy = original_size[1] / 240
-            kpts_scaled = np.array([[pt.pt[0] * sx, pt.pt[1] * sy] for pt in kp])[:, [1, 0]]
-
-
-            desc_packed = np.packbits(desc, axis=1, bitorder='little')
+            kpts_scaled = np.array([[pt.pt[0] * sx, pt.pt[1] * sy] for pt in kp])
 
             save_dir = os.path.join(hpatches_root, name, f"{idx}.ppm.{OUTPUT_METHOD}")
             os.makedirs(save_dir, exist_ok=True)
             np.save(os.path.join(save_dir, "keypoints.npy"), kpts_scaled)
-            np.save(os.path.join(save_dir, "descriptors.npy"), desc_packed)
+            np.save(os.path.join(save_dir, "descriptors.npy"), desc)
 
         # --- accuracy check on 1 vs 6 ---
         img1_path = os.path.join(seq, '1.ppm')
@@ -116,7 +115,6 @@ if __name__ == '__main__':
 
         matches = match_descriptors(desc1, desc2)
 
-        # 調整 homography 對應 resize 尺度
         sx = 320 / size1[0]
         sy = 240 / size1[1]
         S = np.array([[sx, 0, 0], [0, sy, 0], [0, 0, 1]])
@@ -148,4 +146,3 @@ if __name__ == '__main__':
     )
 
     print("✅ ORB evaluation finished!")
-
